@@ -4,6 +4,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
 	"market-mate/models"
 	"market-mate/utils"
 
@@ -22,9 +26,10 @@ func NewStoreFinder(apiKey string) (*StoreFinder, error) {
 	return &StoreFinder{mapsClient: client}, nil
 }
 
-func (s *StoreFinder) FindNearbyStores(lat, lng float64) ([]models.Store, error) {
-	ctx := context.Background()
-
+// FindNearbyStores implements StoreProvider. The context is now supplied by the
+// caller rather than created here, so a cancelled request stops the upstream
+// Maps call instead of leaving it running.
+func (s *StoreFinder) FindNearbyStores(ctx context.Context, lat, lng float64) ([]models.Store, error) {
 	r := &maps.NearbySearchRequest{
 		Location: &maps.LatLng{
 			Lat: lat,
@@ -39,7 +44,9 @@ func (s *StoreFinder) FindNearbyStores(lat, lng float64) ([]models.Store, error)
 		return nil, fmt.Errorf("error finding nearby stores: %v", err)
 	}
 
-	var stores []models.Store
+	// Non-nil empty slice rather than nil: encoding/json renders a nil slice as
+	// `null`, and the frontend maps over `stores` directly.
+	stores := []models.Store{}
 	for _, place := range resp.Results {
 		distance := utils.CalculateDistance(lat, lng, place.Geometry.Location.Lat, place.Geometry.Location.Lng)
 
@@ -52,5 +59,22 @@ func (s *StoreFinder) FindNearbyStores(lat, lng float64) ([]models.Store, error)
 		stores = append(stores, store)
 	}
 
+	// Nearest first, matching the fixture provider and what "nearby stores"
+	// implies. The Places API orders by its own relevance ranking, not distance.
+	sort.Slice(stores, func(i, j int) bool {
+		return parseKm(stores[i].Distance) < parseKm(stores[j].Distance)
+	})
+
 	return stores, nil
+}
+
+// parseKm reads the "%.1f km" string back into a number for sorting. The
+// formatted string is what the API returns, so this keeps one source of truth
+// rather than carrying a parallel float field.
+func parseKm(s string) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(s, " km")), 64)
+	if err != nil {
+		return math.MaxFloat64
+	}
+	return v
 }

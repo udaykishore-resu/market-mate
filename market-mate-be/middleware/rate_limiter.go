@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -40,7 +42,20 @@ func (rl *RateLimiter) RateLimit() gin.HandlerFunc {
 
 		// Check rate limit (100 requests per minute)
 		if len(rl.requests[ip]) >= 100 {
-			c.JSON(429, gin.H{"error": "Rate limit exceeded"})
+			// Retry-After tells the client when to come back instead of
+			// leaving it to guess or hammer (FR-012). The window is a rolling
+			// minute, so the wait is until the oldest request ages out.
+			retryAfter := 60
+			if oldest := rl.requests[ip]; len(oldest) > 0 {
+				if secs := int(time.Until(oldest[0].Add(time.Minute)).Seconds()) + 1; secs > 0 && secs <= 60 {
+					retryAfter = secs
+				}
+			}
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded. Try again shortly.",
+				"stage": "rate_limit",
+			})
 			c.Abort()
 			return
 		}

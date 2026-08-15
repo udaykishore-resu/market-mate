@@ -1,0 +1,30 @@
+# `docker compose up --build` gives a working MarketMate on http://localhost:8081
+# with no API keys. Supply keys in a .env file to upgrade any stage to live.
+
+services:
+  backend:
+    build: ./market-mate-be
+    environment:
+      PORT: "8080"
+      # Unset keys leave that provider in demo mode rather than failing to boot.
+      YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      MAPS_API_KEY: "${MAPS_API_KEY:-}"
+      # The browser only ever talks to nginx, which proxies /api same-origin,
+      # so this list only matters if you expose the backend directly.
+      ALLOWED_ORIGINS: "http://localhost:8081"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "/app/market-mate", "-health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build: ./market-mate-fe
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend

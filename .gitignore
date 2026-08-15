@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build output
+dist/
+build/
+market-mate-be/market-mate
+market-mate-be/server
+*.exe
+
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Test output
+coverage.out
+*.test
+
+# Sandbox-only Go workspace (see market-mate-be/go.work header)
+go.work
+go.work.sum
