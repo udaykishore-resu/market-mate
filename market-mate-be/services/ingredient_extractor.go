@@ -35,6 +35,12 @@ Rules:
 Description:
 %s`
 
+// ModelVersion implements Versioned: the stored extraction is only reusable
+// while both the model and the prompt above are unchanged.
+func (ie *IngredientExtractor) ModelVersion() string {
+	return ModelVersion(ie.model, extractionPrompt)
+}
+
 // ExtractIngredients asks the model for a structured list.
 //
 // The delimiter is "|" rather than the previous "-": ingredient lines are full

@@ -1,5 +1,12 @@
 # `docker compose up --build` gives a working MarketMate on http://localhost:8081
 # with no API keys. Supply keys in a .env file to upgrade any stage to live.
+#
+# This file deliberately runs only MarketMate's own two containers. Postgres,
+# Redis and Elasticsearch are shared with Guest Score and are defined once in the
+# dev-stack repository; duplicating them here would give the two projects two
+# databases that drift apart. Point the MM_* variables below at that stack, or at
+# any instance you already run. Unset, each degrades to a supported mode — see
+# market-mate-be/.env.example.
 
 services:
   backend:
@@ -10,6 +17,17 @@ services:
       YOUTUBE_API_KEY: "${YOUTUBE_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       MAPS_API_KEY: "${MAPS_API_KEY:-}"
+      # Unset infrastructure is the same story: no durable transcript cache, an
+      # in-process store cache, and substring search.
+      MM_POSTGRES_DSN: "${MM_POSTGRES_DSN:-}"
+      MM_MIGRATE: "${MM_MIGRATE:-true}"
+      MM_REDIS_ADDR: "${MM_REDIS_ADDR:-}"
+      MM_REDIS_PASSWORD: "${MM_REDIS_PASSWORD:-}"
+      MM_REDIS_DB: "${MM_REDIS_DB:-1}"
+      MM_ELASTIC_URL: "${MM_ELASTIC_URL:-}"
+      MM_ELASTIC_INDEX: "${MM_ELASTIC_INDEX:-marketmate-recipes}"
+      MM_STORE_CACHE_TTL: "${MM_STORE_CACHE_TTL:-15m}"
+      MM_GRAPHIQL: "${MM_GRAPHIQL:-}"
       # The browser only ever talks to nginx, which proxies /api same-origin,
       # so this list only matters if you expose the backend directly.
       ALLOWED_ORIGINS: "http://localhost:8081"

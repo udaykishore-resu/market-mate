@@ -27,10 +27,14 @@ type FixtureVideoProvider struct{}
 func NewFixtureVideoProvider() *FixtureVideoProvider { return &FixtureVideoProvider{} }
 
 type demoRecipe struct {
-	title        string
-	channel      string
-	description  string
-	ingredients  []models.Ingredient
+	title       string
+	channel     string
+	description string
+	// durationSeconds is plausible rather than arbitrary: it is stored on the
+	// video row and shown as real metadata, so a zero here would read as a
+	// broken record instead of a demo one.
+	durationSeconds int
+	ingredients     []models.Ingredient
 }
 
 var demoRecipes = []demoRecipe{
@@ -50,6 +54,7 @@ Salt for the pasta water
 
 Render the guanciale slowly. Whisk yolks with pecorino and pepper. Toss off the
 heat with a splash of pasta water and keep it moving so it emulsifies.`,
+		durationSeconds: 902,
 		ingredients: []models.Ingredient{
 			{Name: "Spaghetti", Quantity: "400 g"},
 			{Name: "Guanciale, diced", Quantity: "200 g"},
@@ -75,6 +80,7 @@ Handful of Thai basil
 1 tbsp palm sugar
 2 kaffir lime leaves
 Jasmine rice to serve`,
+		durationSeconds: 741,
 		ingredients: []models.Ingredient{
 			{Name: "Green curry paste", Quantity: "2 tbsp"},
 			{Name: "Coconut milk", Quantity: "400 ml"},
@@ -101,6 +107,7 @@ Jasmine rice to serve`,
 1 tsp baking soda
 1.5 tsp flaky sea salt
 300g dark chocolate, chopped into shards`,
+		durationSeconds: 1123,
 		ingredients: []models.Ingredient{
 			{Name: "Unsalted butter", Quantity: "225 g"},
 			{Name: "Dark brown sugar", Quantity: "200 g"},
@@ -126,6 +133,7 @@ Dill pickles
 For the sauce: 4 tbsp mayonnaise, 2 tbsp ketchup, 1 tbsp yellow mustard,
 1 tsp pickle brine
 Neutral oil, salt, pepper`,
+		durationSeconds: 688,
 		ingredients: []models.Ingredient{
 			{Name: "Ground beef (20% fat)", Quantity: "500 g"},
 			{Name: "Potato buns", Quantity: "4"},
@@ -153,6 +161,7 @@ Neutral oil, salt, pepper`,
 50g parmesan, grated
 1 tsp Italian seasoning
 Juice of half a lemon`,
+		durationSeconds: 615,
 		ingredients: []models.Ingredient{
 			{Name: "Salmon fillets, skin on", Quantity: "4"},
 			{Name: "Butter", Quantity: "3 tbsp"},
@@ -185,7 +194,8 @@ func (f *FixtureVideoProvider) GetVideoDetails(_ context.Context, videoID string
 		ChannelTitle: r.channel,
 		// Real thumbnail URLs: YouTube serves these unauthenticated, so a demo
 		// with a genuine video ID shows the genuine thumbnail.
-		ThumbnailURL: fmt.Sprintf("https://i.ytimg.com/vi/%s/hqdefault.jpg", videoID),
+		ThumbnailURL:    fmt.Sprintf("https://i.ytimg.com/vi/%s/hqdefault.jpg", videoID),
+		DurationSeconds: r.durationSeconds,
 	}, nil
 }
 
@@ -196,6 +206,32 @@ func (f *FixtureVideoProvider) GetVideoDetails(_ context.Context, videoID string
 type FixtureIngredientProvider struct{}
 
 func NewFixtureIngredientProvider() *FixtureIngredientProvider { return &FixtureIngredientProvider{} }
+
+// ModelVersion implements Versioned. The catalogue plays the part the prompt
+// plays for the live extractor, so editing a demo recipe invalidates the rows
+// this provider wrote instead of leaving the old list in Postgres forever.
+//
+// The "fixture" model name also keeps the two worlds apart: a live extractor's
+// version string can never collide with this one, so a demo row is never read
+// back on a request being answered live.
+func (f *FixtureIngredientProvider) ModelVersion() string {
+	return ModelVersion(models.SourceFixture, fixtureCatalogue())
+}
+
+func fixtureCatalogue() string {
+	var b strings.Builder
+	for _, r := range demoRecipes {
+		b.WriteString(r.title)
+		b.WriteByte('\n')
+		for _, i := range r.ingredients {
+			b.WriteString(i.Quantity)
+			b.WriteString(" | ")
+			b.WriteString(i.Name)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
 
 func (f *FixtureIngredientProvider) ExtractIngredients(_ context.Context, description string) ([]models.Ingredient, error) {
 	for _, r := range demoRecipes {
@@ -276,10 +312,10 @@ type FixtureStoreProvider struct{}
 func NewFixtureStoreProvider() *FixtureStoreProvider { return &FixtureStoreProvider{} }
 
 type fixtureStore struct {
-	name      string
-	street    string
-	dLatKm    float64
-	dLngKm    float64
+	name   string
+	street string
+	dLatKm float64
+	dLngKm float64
 }
 
 var fixtureStores = []fixtureStore{

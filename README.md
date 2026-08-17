@@ -16,8 +16,13 @@ Open http://localhost:5173. **No API keys, no signup, no billing account.**
 The backend resolves the video ID from whatever link you paste, fetches the
 video's details from the YouTube Data API, sends the description to OpenAI to
 extract a structured ingredient list, geolocates you from your IP, and looks up
-nearby grocery stores via the Google Places API. Results are cached for 15
-minutes per video and location.
+nearby grocery stores via the Google Places API.
+
+What gets cached depends on whether it can change. A video's transcript and the
+ingredients extracted from it cannot, so with `MM_POSTGRES_DSN` set they are
+stored permanently and never re-fetched or re-extracted. Store results can, so
+they keep a 15 minute TTL — in Redis when `MM_REDIS_ADDR` is set, in process
+otherwise.
 
 Each of those three external stages sits behind an interface with two
 implementations: the live API client, and a fixture that returns realistic data.
@@ -71,9 +76,22 @@ Errors return `{"error": "...", "stage": "url|video|ingredients|stores"}` with a
 appropriate status: 400 for a bad URL, 429 (with `Retry-After`) when rate
 limited, 502 when an upstream provider fails.
 
+### `GET /api/recipes/search?q=&ingredient=&limit=`
+
+Searches stored recipes by title, channel or ingredient. Elasticsearch when
+`MM_ELASTIC_URL` is set, a substring scan over Postgres otherwise; the response
+names which one answered.
+
+### `POST /graphql`, `GET /graphiql`
+
+`recipe`, `searchRecipes`, `stores` and `health`. Every type that can be fixture
+data carries a `provenance` field. GraphiQL needs `MM_GRAPHIQL=true`.
+
 ### `GET /api/health`
 
-Reports status, whether each provider is `live` or `simulated`, and cache stats.
+Reports status, whether each provider is `live` or `simulated`, per-dependency
+state with latency, and cache stats. `degraded` with a 200 when an optional
+dependency is down — the service still answers — and 503 only while draining.
 
 ## Configuration
 
@@ -87,6 +105,10 @@ Everything is optional — see `market-mate-be/.env.example`.
 | `PORT` | `8080` | Backend listen port |
 | `ALLOWED_ORIGINS` | `localhost:5173,localhost:4173` | CORS allow-list |
 | `DEMO_MODE` | `false` | Force fixtures even with keys |
+| `MM_POSTGRES_DSN` | — | Permanent transcript and extraction cache |
+| `MM_REDIS_ADDR` | — | Shared store cache; in-process cache when unset |
+| `MM_ELASTIC_URL` | — | Recipe search; Postgres substring scan when unset |
+| `MM_GRAPHIQL` | `false` | Serve the GraphiQL explorer |
 
 Frontend: `VITE_API_BASE_URL` (default empty = same origin; the dev and preview
 servers proxy `/api` to the backend).
@@ -126,9 +148,13 @@ Cloud Run without modification.
 market-mate-be/            Go 1.21 + Gin
   cmd/                     entrypoint, provider selection, graceful shutdown
   handlers/                HTTP handlers + tests
-  services/                providers (live + fixture), URL parsing, cache, location
+  services/                providers (live + fixture), URL parsing, cache, geohash, location
+  storage/                 Postgres store + embedded migrations
+  search/                  Elasticsearch client + Postgres fallback
+  gql/                     GraphQL schema and resolvers
+  health/                  dependency probes, shared by REST and GraphQL
   middleware/              request logging, per-IP rate limiting
-  models/                  API types
+  models/                  API and record types
 market-mate-fe/            React 18 + Vite + TypeScript + shadcn-ui + Tailwind
 specs/                     spec-driven development docs
 ```

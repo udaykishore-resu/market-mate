@@ -27,6 +27,10 @@ type VideoDetails struct {
 	Description  string `json:"description"`
 	ChannelTitle string `json:"channelTitle"`
 	ThumbnailURL string `json:"thumbnailUrl"`
+	// DurationSeconds is 0 when the provider could not report it. It is stored
+	// alongside the transcript so a search hit can be filtered or ranked by
+	// length without a second call to YouTube.
+	DurationSeconds int `json:"durationSeconds,omitempty"`
 }
 
 // VideoProvider fetches metadata for a video.
