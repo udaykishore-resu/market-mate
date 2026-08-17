@@ -172,3 +172,7 @@ characters of the input string, which returned garbage for any link carrying
 query parameters — including the `?si=` that YouTube's share button appends by
 default — and panicked outright on input shorter than 11 characters. It is now a
 real parser with table-driven tests and a fuzz target.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
