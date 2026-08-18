@@ -4,7 +4,7 @@
 # is the whole repo, which is what the platform stack passes. The backend module
 # lives one directory down and everything below reflects that.
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 
 # Dependency layer first: MarketMate has a large dependency graph (gin, the
