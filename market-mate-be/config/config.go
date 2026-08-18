@@ -28,6 +28,21 @@ type Config struct {
 	// arrival.
 	AllowedOrigins []string
 
+	// AllowLoopbackOrigins widens CORS to any http://localhost:<port> during a
+	// demo run where the operator did not state an allow-list.
+	//
+	// The narrow list is right for a deployment and wrong for local work: the
+	// dev server's port is a moving target (`make demo WEB_PORT=5174`, a second
+	// Vite instance sliding to the next free port), and every move produces a
+	// 403 that reads like a broken endpoint rather than a CORS rejection.
+	//
+	// It is deliberately not a blanket wildcard. It applies only when fixtures
+	// are already on — so nothing real is being served — and only to loopback
+	// addresses, and it is switched off the moment ALLOWED_ORIGINS is set,
+	// because widening what an operator explicitly configured would be the
+	// wrong kind of helpful.
+	AllowLoopbackOrigins bool
+
 	// ForceDemo runs every provider from fixtures even when keys are present,
 	// for screenshots and offline demos.
 	ForceDemo bool
@@ -77,12 +92,17 @@ func LoadConfig() (*Config, error) {
 		GraphiQL: isTruthy(os.Getenv("MM_GRAPHIQL")),
 	}
 
-	origins := envOr("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:4173")
+	explicitOrigins := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+	origins := explicitOrigins
+	if origins == "" {
+		origins = "http://localhost:5173,http://localhost:4173"
+	}
 	for _, o := range strings.Split(origins, ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			cfg.AllowedOrigins = append(cfg.AllowedOrigins, o)
 		}
 	}
+	cfg.AllowLoopbackOrigins = cfg.ForceDemo && explicitOrigins == ""
 
 	return cfg, nil
 }

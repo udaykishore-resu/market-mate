@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -93,14 +94,23 @@ func main() {
 	r.Use(middleware.Logger())
 	r.Use(middleware.NewRateLimiter().RateLimit())
 
-	r.Use(cors.New(cors.Config{
+	corsCfg := cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
-	}))
+	}
+	if cfg.AllowLoopbackOrigins {
+		// AllowOriginFunc supersedes AllowOrigins in gin-contrib/cors, and is
+		// the only way to accept an arbitrary port while keeping
+		// AllowCredentials — a literal "*" is rejected outright with
+		// credentials enabled.
+		corsCfg.AllowOrigins = nil
+		corsCfg.AllowOriginFunc = config.IsLoopbackOrigin
+	}
+	r.Use(cors.New(corsCfg))
 
 	r.POST("/api/process-video", videoHandler.ProcessVideo)
 	r.GET("/api/health", videoHandler.Health)
@@ -140,7 +150,11 @@ func main() {
 		}
 	}()
 
-	log.Printf("MarketMate listening on :%s  (CORS: %v)", cfg.Port, cfg.AllowedOrigins)
+	corsDescription := fmt.Sprintf("%v", cfg.AllowedOrigins)
+	if cfg.AllowLoopbackOrigins {
+		corsDescription = "any loopback origin (demo mode, ALLOWED_ORIGINS unset)"
+	}
+	log.Printf("MarketMate listening on :%s  (CORS: %s)", cfg.Port, corsDescription)
 	log.Printf("extraction model version: %s", videoHandler.ModelVersion())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
