@@ -1,0 +1,43 @@
+version: 2
+
+# Grouped and monthly rather than per-dependency and weekly. A stream of
+# single-dependency pull requests against a repository with a real integration
+# suite costs more CI minutes than it saves attention, and the grouping means
+# one review covers a coherent set.
+updates:
+  - package-ecosystem: gomod
+    directory: /market-mate-be
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # gin's major versions have changed middleware signatures before; that is
+      # deliberate work, not a dependency bump.
+      - dependency-name: github.com/gin-gonic/gin
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: npm
+    directory: /market-mate-fe
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /
+    schedule:
+      interval: monthly

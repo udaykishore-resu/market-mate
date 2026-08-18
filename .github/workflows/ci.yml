@@ -1,0 +1,278 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.24"
+  NODE_VERSION: "22"
+
+jobs:
+  backend:
+    name: Backend (build, vet, race tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: market-mate-be/go.sum
+
+      # go.sum is verified, but not regenerated. `go mod tidy` on this module
+      # walks a large pre-modules dependency graph (the Maps and OpenCensus
+      # chains) and can legitimately differ between toolchain patch releases;
+      # gating on its exact output would make CI fail for reasons unrelated to
+      # any change. `verify` still proves every dependency matches its recorded
+      # hash, which is the property that actually protects the build.
+      - name: Verify dependencies
+        working-directory: market-mate-be
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Build
+        working-directory: market-mate-be
+        run: go build ./...
+
+      - name: Vet
+        working-directory: market-mate-be
+        run: go vet ./...
+
+      - name: Check formatting
+        working-directory: market-mate-be
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Test with the race detector
+        working-directory: market-mate-be
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
+
+      - name: Coverage summary
+        working-directory: market-mate-be
+        run: |
+          {
+            echo "### Backend coverage"
+            echo '```'
+            go tool cover -func=coverage.out | tail -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: market-mate-be/go.sum
+      - name: Install golangci-lint
+        run: |
+          curl -sSL -o /tmp/glci.tar.gz \
+            https://github.com/golangci/golangci-lint/releases/download/v2.1.6/golangci-lint-2.1.6-linux-amd64.tar.gz
+          tar -xzf /tmp/glci.tar.gz -C /tmp
+          sudo install /tmp/golangci-lint-2.1.6-linux-amd64/golangci-lint /usr/local/bin/
+          golangci-lint --version
+      - name: Lint
+        working-directory: market-mate-be
+        run: golangci-lint run --timeout=8m
+
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: market-mate-fe/package-lock.json
+      - working-directory: market-mate-fe
+        run: npm ci
+      - working-directory: market-mate-fe
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: market-mate-fe/dist
+          retention-days: 7
+
+  integration:
+    name: Integration (postgres, redis, elasticsearch)
+    runs-on: ubuntu-latest
+
+    # Proves the service really talks to the three systems it claims to, with
+    # fixtures standing in for the paid external APIs. Without this the caching
+    # design — the whole point of this iteration — is an untested assertion.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: marketmate
+          POSTGRES_PASSWORD: marketmate
+          POSTGRES_DB: marketmate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U marketmate"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9200/_cluster/health"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+
+    env:
+      PORT: "8081"
+      MM_POSTGRES_DSN: postgres://marketmate:marketmate@localhost:5432/marketmate?sslmode=disable
+      MM_MIGRATE: "true"
+      MM_REDIS_ADDR: localhost:6379
+      MM_REDIS_DB: "1"
+      MM_ELASTIC_URL: http://localhost:9200
+      MM_ELASTIC_INDEX: marketmate-recipes
+      MM_GRAPHQL: "true"
+      USE_FIXTURES: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: market-mate-be/go.sum
+
+      - name: Run the Postgres integration tests
+        working-directory: market-mate-be
+        env:
+          MM_TEST_POSTGRES_DSN: postgres://marketmate:marketmate@localhost:5432/marketmate?sslmode=disable
+        run: go test ./storage/... -race -count=1 -v
+
+      - name: Start the API
+        working-directory: market-mate-be
+        run: |
+          go build -o /tmp/marketmate ./cmd
+          /tmp/marketmate > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8081/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          echo "--- boot log ---"; cat /tmp/api.log
+
+      - name: Every dependency is really connected
+        run: |
+          health=$(curl -fsS http://localhost:8081/api/health)
+          echo "$health" | python3 -m json.tool
+          echo "$health" | python3 -c '
+          import json, sys
+          h = json.load(sys.stdin)
+          checks = h.get("checks", {})
+          for name in ("postgres", "redis", "elasticsearch"):
+              c = checks.get(name)
+              if c is None:
+                  sys.exit(f"health does not report on {name}")
+              if not c.get("ok"):
+                  sys.exit(f"{name} is unhealthy: {c.get(\"error\")}")
+          print("connected:", sorted(checks))'
+
+      - name: A cold video is extracted once and then cached forever
+        run: |
+          body='{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","latitude":37.7749,"longitude":-122.4194}'
+          first=$(curl -fsS -X POST http://localhost:8081/api/process-video \
+                    -H 'Content-Type: application/json' -d "$body")
+          echo "$first" | head -c 400; echo
+
+          # Second call must be served from Postgres, not re-extracted. The
+          # fixture providers make that observable through the log rather than
+          # through latency, which is too noisy on a shared runner.
+          curl -fsS -X POST http://localhost:8081/api/process-video \
+            -H 'Content-Type: application/json' -d "$body" > /dev/null
+
+          rows=$(docker run --rm --network host -e PGPASSWORD=marketmate postgres:17-alpine \
+            psql -h localhost -U marketmate -d marketmate -tAc \
+            "SELECT count(*) FROM extractions;")
+          echo "extraction rows after two identical requests: $rows"
+          [ "$rows" = "1" ] || { echo "::error::expected exactly one cached extraction, got $rows"; exit 1; }
+
+      - name: Redis holds the store lookups
+        run: |
+          keys=$(docker run --rm --network host redis:7-alpine redis-cli -n 1 --scan --pattern '*' | wc -l)
+          echo "redis keys in db 1: $keys"
+          [ "$keys" -gt 0 ] || { echo "::error::nothing was written to redis"; exit 1; }
+
+      - name: GraphQL answers
+        run: |
+          out=$(curl -fsS -X POST http://localhost:8081/graphql \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ health }"}')
+          echo "$out"
+          echo "$out" | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)
+          if "errors" in d: sys.exit(f"graphql errors: {d[\"errors\"]}")
+          print("graphql ok")'
+
+      - name: Logs on failure
+        if: failure()
+        run: cat /tmp/api.log || true
+
+  docker:
+    name: Images build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: api, dockerfile: Dockerfile }
+          - { name: web, dockerfile: Dockerfile.web }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: marketmate-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+  vulnerability-scan:
+    name: govulncheck (advisory)
+    runs-on: ubuntu-latest
+    # Advisory rather than a gate: a CVE disclosed against a transitive
+    # dependency should not turn every unrelated pull request red overnight.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: market-mate-be/go.sum
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - working-directory: market-mate-be
+        run: govulncheck ./...

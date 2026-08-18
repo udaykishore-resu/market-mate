@@ -66,7 +66,7 @@ func (ls *LocationService) Resolve(ctx context.Context, ipStr string) (Location,
 	if err != nil {
 		return DefaultLocation, false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return DefaultLocation, false

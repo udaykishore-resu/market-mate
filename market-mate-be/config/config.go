@@ -1,3 +1,6 @@
+// Package config loads and validates every environment variable the service
+// reads, in one place, so a missing key is reported at boot rather than on the
+// first request that needed it.
 package config
 
 import (

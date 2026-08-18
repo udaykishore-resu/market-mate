@@ -1,0 +1,75 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif",
+    "fontSize": "14px",
+    "primaryTextColor": "#0F172A",
+    "lineColor": "#64748B",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": { "curve": "basis", "nodeSpacing": 34, "rankSpacing": 70, "padding": 12 }
+}}%%
+graph LR
+  %% MarketMate — service and data architecture. Every provider is an interface
+  %% with a live and a fixture implementation, selected by environment, and a
+  %% fixture result is labelled as simulated all the way to the client.
+
+  subgraph clients[" Client "]
+    direction TB
+    WEB["<b>MarketMate web</b><br/>React 18 · shadcn-ui · Vite<br/><code>:5173</code>"]
+  end
+
+  NGINX["<b>nginx</b> — SPA and same-origin proxy<br/><code>/api</code> · <code>/graphql</code> → API"]
+
+  subgraph app[" Application "]
+    direction TB
+    API["<b>marketmate-api</b><br/>Go · gin · REST + GraphQL<br/><code>:8081</code>"]
+    EXTRACT["<b>Ingredient extraction</b><br/>prompt-fingerprinted<br/>model version"]
+    STORES["<b>Store finder</b><br/>geohash-keyed, batched"]
+  end
+
+  subgraph data[" Data "]
+    direction TB
+    PG[("<b>PostgreSQL 17</b><br/>transcripts + extractions<br/><i>permanent, never expires</i>")]
+    REDIS[("<b>Redis 7</b> · db 1<br/>store lookups by geohash<br/><i>15 min TTL</i>")]
+    ES[("<b>Elasticsearch 8</b><br/>recipe + ingredient search<br/><i>falls back to SQL ILIKE</i>")]
+  end
+
+  subgraph ext[" External providers "]
+    direction TB
+    YT["YouTube<br/><small>transcript</small>"]
+    LLM["OpenAI<br/><small>ingredient extraction</small>"]
+    MAPS["Google Places<br/><small>nearby grocery stores</small>"]
+    FIX[/"Fixture providers<br/><code>USE_FIXTURES=true</code><br/><i>results labelled simulated</i>"/]
+  end
+
+  WEB -->|HTTPS| NGINX
+  NGINX --> API
+  API --> EXTRACT
+  API --> STORES
+
+  EXTRACT -->|"cache first"| PG
+  EXTRACT -.->|"only on a miss"| YT
+  EXTRACT -.->|"only on a miss"| LLM
+  STORES -->|"cache first"| REDIS
+  STORES -.->|"only on a miss"| MAPS
+  API -->|"REST"| ES
+
+  YT -. "no API key" .-> FIX
+  LLM -. "no API key" .-> FIX
+  MAPS -. "no API key" .-> FIX
+
+  classDef client fill:#EEF2FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+  classDef svc fill:#CCFBF1,stroke:#0F766E,stroke-width:1.5px,color:#042F2E
+  classDef store fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
+  classDef external fill:#F3E8FF,stroke:#7E22CE,stroke-width:1.5px,color:#3B0764
+  classDef fixture fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.2px,color:#334155,stroke-dasharray:4 3
+  classDef edgecls fill:#E0F2FE,stroke:#0369A1,stroke-width:1.5px,color:#082F49
+
+  class WEB client
+  class API,EXTRACT,STORES svc
+  class PG,REDIS,ES store
+  class YT,LLM,MAPS external
+  class FIX fixture
+  class NGINX edgecls

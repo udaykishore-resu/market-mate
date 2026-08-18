@@ -1,0 +1,64 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif",
+    "fontSize": "13px",
+    "primaryTextColor": "#0F172A",
+    "lineColor": "#64748B",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": { "curve": "basis", "nodeSpacing": 34, "rankSpacing": 45 }
+}}%%
+graph TB
+  %% What gets cached, for how long, and why. The whole design turns on one
+  %% observation: half of this request never changes and half of it goes stale
+  %% in minutes, and the original code applied the same 15-minute TTL to both.
+
+  REQ[/"POST /api/process-video<br/>{url, lat, lng}"/] --> PARSE["ParseVideoID"]
+  PARSE --> SPLIT{"Which half?"}
+
+  SPLIT -->|"recipe content"| V1
+  SPLIT -->|"nearby stores"| S1
+
+  subgraph permanent[" Permanent — a transcript never changes "]
+    direction TB
+    V1{"videos row<br/>for this id?"}
+    V1 -->|hit| V2{"extraction for<br/>this model_version?"}
+    V1 -->|miss| VF["Fetch transcript from YouTube"] --> VS["INSERT INTO videos"] --> V2
+    V2 -->|hit| VOUT["Ingredients, free"]
+    V2 -->|miss| VE["Call the LLM"] --> VES["INSERT INTO extractions"] --> VOUT
+  end
+
+  subgraph perishable[" Perishable — 15 minute TTL "]
+    direction TB
+    S1["geohash(lat, lng, p5)<br/>≈ 5 km cell"]
+    S1 --> S2{"redis key<br/>stores:{video}:{cell}?"}
+    S2 -->|hit| SOUT["Store list"]
+    S2 -->|miss| SQ["Google Places, batched<br/>across the ingredient set"] --> SS["SETEX 15m"] --> SOUT
+  end
+
+  VOUT --> MERGE["Merge, attach provenance"]
+  SOUT --> MERGE
+  MERGE --> RESP[/"Recipe + ingredients + stores<br/>each labelled live or simulated"/]
+
+  N1>"<b>model_version</b> is a fingerprint of the model name<br/>AND the prompt text. Editing the prompt changes it,<br/>so stale extractions are never served — and nothing<br/>has to be manually purged."]
+  V2 -.- N1
+
+  N2>"The original threw all of this away every 15 minutes<br/>and re-paid for a transcript fetch and an LLM call on<br/>the next request. That was the dominant cost per<br/>request and it was entirely avoidable."]
+  permanent -.- N2
+
+  N3>"Precision 5 rather than rounded lat/long: a rounding<br/>boundary puts two people 100 m apart in different<br/>cells, and a geohash cell degrades predictably."]
+  S1 -.- N3
+
+  classDef io fill:#EEF2FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+  classDef step fill:#CCFBF1,stroke:#0F766E,stroke-width:1.5px,color:#042F2E
+  classDef decision fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
+  classDef costly fill:#FEE2E2,stroke:#B91C1C,stroke-width:1.5px,color:#450A0A
+  classDef note fill:#FFFBEB,stroke:#D97706,stroke-width:1px,color:#451A03
+
+  class REQ,RESP io
+  class PARSE,VS,VES,SS,S1,MERGE,VOUT,SOUT step
+  class SPLIT,V1,V2,S2 decision
+  class VF,VE,SQ costly
+  class N1,N2,N3 note

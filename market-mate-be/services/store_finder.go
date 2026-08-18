@@ -1,15 +1,17 @@
-// services/store_finder.go
+// Package services holds the pipeline stages: video resolution, transcript
+// retrieval, ingredient extraction and store lookup. Each external stage is an
+// interface with a live and a fixture implementation, chosen at startup.
 package services
 
 import (
 	"context"
 	"fmt"
+	"market-mate/models"
+	"market-mate/utils"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
-	"market-mate/models"
-	"market-mate/utils"
 
 	"googlemaps.github.io/maps"
 )
@@ -21,7 +23,7 @@ type StoreFinder struct {
 func NewStoreFinder(apiKey string) (*StoreFinder, error) {
 	client, err := maps.NewClient(maps.WithAPIKey(apiKey))
 	if err != nil {
-		return nil, fmt.Errorf("error creating Maps client: %v", err)
+		return nil, fmt.Errorf("creating the Maps client: %w", err)
 	}
 	return &StoreFinder{mapsClient: client}, nil
 }
@@ -41,7 +43,7 @@ func (s *StoreFinder) FindNearbyStores(ctx context.Context, lat, lng float64) ([
 
 	resp, err := s.mapsClient.NearbySearch(ctx, r)
 	if err != nil {
-		return nil, fmt.Errorf("error finding nearby stores: %v", err)
+		return nil, fmt.Errorf("finding nearby stores: %w", err)
 	}
 
 	// Non-nil empty slice rather than nil: encoding/json renders a nil slice as

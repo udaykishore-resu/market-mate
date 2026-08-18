@@ -1,3 +1,6 @@
+// Package middleware holds the gin middleware: request logging and the
+// per-client rate limiter that keeps one caller from exhausting the upstream
+// API quota for everyone.
 package middleware
 
 import (

@@ -1,0 +1,68 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#CCFBF1",
+    "primaryBorderColor": "#0F766E",
+    "primaryTextColor": "#0F172A",
+    "lineColor": "#64748B",
+    "actorBkg": "#EEF2FF",
+    "actorBorder": "#4F46E5",
+    "actorTextColor": "#1E1B4B",
+    "signalColor": "#334155",
+    "signalTextColor": "#0F172A",
+    "noteBkgColor": "#FEF3C7",
+    "noteBorderColor": "#B45309",
+    "noteTextColor": "#451A03"
+  }
+}}%%
+sequenceDiagram
+  autonumber
+  actor U as Cook
+  participant API as marketmate-api
+  participant PG as PostgreSQL
+  participant YT as YouTube
+  participant LLM as OpenAI
+  participant R as Redis
+  participant M as Google Places
+
+  U->>API: POST /api/process-video<br/>{url, lat, lng}
+  API->>API: ParseVideoID(url)
+  Note right of API: Handles ?si= and &t= query junk.<br/>The original sliced the last 11<br/>characters and panicked on short input.
+
+  rect rgb(248, 250, 252)
+    Note over API,LLM: The expensive half — cached permanently
+    API->>PG: SELECT transcript WHERE video_id = $1
+    alt cold video
+      PG-->>API: miss
+      API->>YT: fetch transcript
+      YT-->>API: transcript
+      API->>PG: INSERT INTO videos
+      API->>LLM: extract ingredients<br/>(prompt + model → version fingerprint)
+      LLM-->>API: structured ingredients
+      API->>PG: INSERT INTO extractions<br/>(video_id, model_version, ingredients)
+      Note right of PG: A transcript never changes, so this<br/>never expires. The version fingerprint<br/>is what invalidates it — edit the prompt<br/>and the next request re-extracts.
+    else already seen
+      PG-->>API: transcript + extraction
+      Note right of API: No network call, no LLM spend.<br/>This is why the second person to<br/>try a recipe gets it instantly.
+    end
+  end
+
+  rect rgb(248, 250, 252)
+    Note over API,M: The perishable half — short TTL
+    API->>API: geohash(lat, lng, precision 5) ≈ 5 km cell
+    API->>R: GET stores:{video}:{geohash}
+    alt cache hit
+      R-->>API: store list
+    else cold cell
+      R-->>API: miss
+      API->>M: nearby stores for the ingredient set<br/>(batched, not one call per ingredient)
+      M-->>API: stores + distances
+      API->>R: SETEX 15m
+      Note right of R: Stores open, close and move.<br/>Unlike a transcript this genuinely<br/>goes stale, so it keeps a TTL.
+    end
+  end
+
+  API-->>U: recipe + ingredients + nearby stores<br/>each carrying its provenance
+  Note over U,API: Provenance travels with the data: a fixture result is<br/>labelled simulated at every layer, so a demo can never be<br/>mistaken for a live lookup.

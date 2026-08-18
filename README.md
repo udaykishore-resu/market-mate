@@ -1,5 +1,15 @@
 # MarketMate
 
+[![CI](https://github.com/udaykishore-resu/market-mate/actions/workflows/ci.yml/badge.svg)](https://github.com/udaykishore-resu/market-mate/actions/workflows/ci.yml)
+[![Release](https://github.com/udaykishore-resu/market-mate/actions/workflows/release.yml/badge.svg)](https://github.com/udaykishore-resu/market-mate/actions/workflows/release.yml)
+![Go](https://img.shields.io/badge/Go-1.21-00ADD8?logo=go&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
+![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8-005571?logo=elasticsearch&logoColor=white)
+![GraphQL](https://img.shields.io/badge/GraphQL-E10098?logo=graphql&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Kustomize-326CE5?logo=kubernetes&logoColor=white)
+
 Paste a YouTube cooking video link and MarketMate pulls out the ingredient list,
 then shows nearby stores where you can buy them.
 
@@ -10,6 +20,51 @@ make demo
 ```
 
 Open http://localhost:5173. **No API keys, no signup, no billing account.**
+
+## Architecture
+
+[![Architecture](docs/diagrams/architecture.svg)](docs/diagrams/architecture.svg)
+
+<sub>Download: [SVG](docs/diagrams/architecture.svg) · [PNG](docs/diagrams/architecture.png) · [Mermaid source](docs/diagrams/architecture.mmd)</sub>
+
+Every external stage sits behind an interface with a live and a fixture
+implementation, chosen at startup by whether that stage's API key is present.
+Postgres, Redis and Elasticsearch are each optional in the same way: unset the
+variable and the previous behaviour takes over.
+
+| Unset               | Falls back to                                  |
+|---------------------|------------------------------------------------|
+| `MM_POSTGRES_DSN`   | no durable transcript or extraction cache       |
+| `MM_REDIS_ADDR`     | the in-process `go-cache`                       |
+| `MM_ELASTIC_URL`    | SQL `ILIKE` scan over cached recipes            |
+| `OPENAI_API_KEY` &c | fixture providers, results labelled `simulated` |
+
+## Request walkthrough
+
+[![Recipe to stores](docs/diagrams/sequence-recipe-to-stores.svg)](docs/diagrams/sequence-recipe-to-stores.svg)
+
+<sub>Download: [SVG](docs/diagrams/sequence-recipe-to-stores.svg) · [PNG](docs/diagrams/sequence-recipe-to-stores.png) · [Mermaid source](docs/diagrams/sequence-recipe-to-stores.mmd)</sub>
+
+## What gets cached, and for how long
+
+[![Caching strategy](docs/diagrams/flow-cache.svg)](docs/diagrams/flow-cache.svg)
+
+<sub>Download: [SVG](docs/diagrams/flow-cache.svg) · [PNG](docs/diagrams/flow-cache.png) · [Mermaid source](docs/diagrams/flow-cache.mmd)</sub>
+
+The single most valuable change in this iteration. A request has two halves with
+opposite lifetimes, and the original applied one 15-minute TTL to both:
+
+- **A transcript and its extracted ingredients never change.** Throwing them away
+  every 15 minutes meant re-paying for a transcript fetch and an LLM call on the
+  next request for the same video — the dominant cost per request, and entirely
+  avoidable. They are now permanent rows in Postgres, invalidated only by a
+  change to the extraction prompt or model, which is captured as a fingerprint
+  in `model_version`.
+- **Nearby stores genuinely go stale.** Those keep a TTL, in Redis so the cache
+  survives a restart and is shared across replicas, keyed on video plus a
+  precision-5 geohash (~5 km) rather than a rounded latitude and longitude,
+  because a rounding boundary puts two people a hundred metres apart in
+  different cells.
 
 ## How it works
 
@@ -173,6 +228,12 @@ query parameters — including the `?si=` that YouTube's share button appends by
 default — and panicked outright on input shorter than 11 characters. It is now a
 real parser with table-driven tests and a fuzz target.
 
-## Licence
+## Repository topics
 
-MIT. See [LICENSE](LICENSE).
+Topics live in GitHub metadata rather than in the tree, so the intended set is
+kept in [`scripts/set-topics.sh`](scripts/set-topics.sh) where it is reviewable:
+
+```bash
+./scripts/set-topics.sh --print    # show the list
+./scripts/set-topics.sh            # apply it (needs the gh CLI, authenticated)
+```

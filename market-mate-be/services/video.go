@@ -66,12 +66,12 @@ func ParseISO8601Duration(s string) int {
 	if !strings.HasPrefix(s, "P") {
 		return 0
 	}
-	timePart := s
-	if i := strings.Index(s, "T"); i >= 0 {
-		timePart = s[i+1:]
-	} else {
+	i := strings.Index(s, "T")
+	if i < 0 {
+		// No time component at all: days-only, which only live streams produce.
 		return 0
 	}
+	timePart := s[i+1:]
 
 	total, num := 0, 0
 	seen := false

@@ -1,3 +1,6 @@
+// Package handlers holds the HTTP layer: request decoding, the pipeline
+// orchestration for a video request, search, and the per-dependency health
+// report. Business rules live in services and storage, not here.
 package handlers
 
 import (

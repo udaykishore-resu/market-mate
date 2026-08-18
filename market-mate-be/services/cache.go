@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -165,7 +166,7 @@ func (r *redisCache) Get(ctx context.Context, key string, dest any) bool {
 		r.misses.Add(1)
 		// redis.Nil is an ordinary miss; anything else is worth a line, because
 		// a permanently unreachable cache looks identical to a cold one.
-		if err != redis.Nil {
+		if !errors.Is(err, redis.Nil) {
 			log.Printf("cache: redis get %s: %v", key, err)
 		}
 		return false

@@ -1,4 +1,5 @@
-// utils/distance.go
+// Package utils holds small self-contained helpers with no dependency on the
+// rest of the service.
 package utils
 
 import "math"

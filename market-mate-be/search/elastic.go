@@ -79,7 +79,7 @@ func (c *Client) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var body struct {
 		Status string `json:"status"`
@@ -101,7 +101,7 @@ func (c *Client) EnsureIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
@@ -113,7 +113,7 @@ func (c *Client) EnsureIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer create.Body.Close()
+	defer func() { _ = create.Body.Close() }()
 	if create.StatusCode >= 300 {
 		// Another replica winning the same race is success, not failure.
 		body, _ := io.ReadAll(io.LimitReader(create.Body, 2048))
@@ -142,7 +142,7 @@ func (c *Client) Index(ctx context.Context, recipe models.Recipe) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return fmt.Errorf("indexing %s: %s: %s", recipe.VideoID, resp.Status, body)
@@ -155,7 +155,7 @@ func (c *Client) Search(ctx context.Context, q Query) ([]models.Recipe, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// The index has not been created yet: no documents, not an outage.

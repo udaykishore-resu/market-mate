@@ -18,11 +18,11 @@ var videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // youTubeHosts are the hosts we accept, after stripping any "www." prefix.
 var youTubeHosts = map[string]bool{
-	"youtube.com":        true,
-	"m.youtube.com":      true,
-	"music.youtube.com":  true,
+	"youtube.com":          true,
+	"m.youtube.com":        true,
+	"music.youtube.com":    true,
 	"youtube-nocookie.com": true,
-	"youtu.be":           true,
+	"youtu.be":             true,
 }
 
 // pathPrefixes are the path forms that carry the ID as the segment after the

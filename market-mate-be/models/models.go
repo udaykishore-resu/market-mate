@@ -1,3 +1,6 @@
+// Package models holds the wire and storage shapes shared across the service.
+// Every type that can originate from a fixture carries its provenance, so a
+// simulated result is never presentable as a live one.
 package models
 
 import "time"
