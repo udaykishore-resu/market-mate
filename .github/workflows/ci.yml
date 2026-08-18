@@ -91,7 +91,7 @@ jobs:
         run: golangci-lint run --timeout=8m
 
   frontend:
-    name: Frontend (build)
+    name: Frontend (lint, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,10 +100,52 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: market-mate-fe/package-lock.json
+
+      # npm's ERESOLVE output names a peer conflict but not the drift that
+      # caused it, and it is forty lines long. Printing the declared ranges next
+      # to the locked versions first means the next failure is diagnosable from
+      # the top of the log instead of by reading the tree.
+      #
+      # This exists because the lint toolchain broke exactly this way: an
+      # @eslint/js on a different major from eslint, which npm reports as a
+      # peerOptional conflict several frames removed from the cause.
+      - name: Show the declared and locked dependency versions
+        working-directory: market-mate-fe
+        run: |
+          python3 - <<'EOF'
+          import json
+          pkg = json.load(open("package.json"))
+          lock = json.load(open("package-lock.json"))
+          dev = pkg.get("devDependencies", {})
+          print(f"{'package':<32} {'declared':<12} {'locked'}")
+          for name in sorted(dev):
+              locked = lock["packages"].get(f"node_modules/{name}", {}).get("version", "-")
+              print(f"{name:<32} {dev[name]:<12} {locked}")
+          # eslint and @eslint/js must share a major; typescript-eslint 8
+          # supports eslint 9 and not 10, so the whole set moves together.
+          majors = {}
+          for name in ("eslint", "@eslint/js"):
+              v = lock["packages"].get(f"node_modules/{name}", {}).get("version", "")
+              majors[name] = v.split(".")[0] if v else ""
+          if majors["eslint"] and majors["eslint"] != majors["@eslint/js"]:
+              raise SystemExit(
+                  f"::error::eslint is on major {majors['eslint']} but @eslint/js is on "
+                  f"{majors['@eslint/js']}. They must match; see the pinned block in package.json.")
+          print("\neslint stack majors agree")
+          EOF
+
       - working-directory: market-mate-fe
         run: npm ci
+
+      # The lint toolchain is pinned as a set precisely so it keeps working;
+      # running it is what proves the pins are still coherent rather than just
+      # installable. Warnings do not fail the build, errors do.
+      - working-directory: market-mate-fe
+        run: npm run lint
+
       - working-directory: market-mate-fe
         run: npm run build
+
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist

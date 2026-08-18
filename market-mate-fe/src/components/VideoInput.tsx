@@ -45,7 +45,7 @@ export const VideoInput = ({ onSubmit, isLoading = false }: VideoInputProps) => 
     onSubmit(trimmed);
   };
 
-  const useExample = (id: string) => {
+  const applyExample = (id: string) => {
     const exampleUrl = `https://youtu.be/${id}`;
     setUrl(exampleUrl);
     setTouched(true);
@@ -94,7 +94,7 @@ export const VideoInput = ({ onSubmit, isLoading = false }: VideoInputProps) => 
           <button
             key={ex.id}
             type="button"
-            onClick={() => useExample(ex.id)}
+            onClick={() => applyExample(ex.id)}
             disabled={isLoading}
             className="px-3 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-50"
           >
