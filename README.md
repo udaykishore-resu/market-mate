@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/udaykishore-resu/market-mate/actions/workflows/ci.yml/badge.svg)](https://github.com/udaykishore-resu/market-mate/actions/workflows/ci.yml)
 [![Release](https://github.com/udaykishore-resu/market-mate/actions/workflows/release.yml/badge.svg)](https://github.com/udaykishore-resu/market-mate/actions/workflows/release.yml)
-![Go](https://img.shields.io/badge/Go-1.21-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
@@ -200,7 +200,7 @@ Cloud Run without modification.
 ## Project structure
 
 ```
-market-mate-be/            Go 1.21 + Gin
+market-mate-be/            Go 1.26 + Gin
   cmd/                     entrypoint, provider selection, graceful shutdown
   handlers/                HTTP handlers + tests
   services/                providers (live + fixture), URL parsing, cache, geohash, location

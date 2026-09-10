@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: market-mate-be/go.mod
           cache-dependency-path: market-mate-be/go.sum
       - working-directory: market-mate-be
         run: |

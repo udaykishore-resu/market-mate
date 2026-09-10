@@ -1,6 +1,6 @@
 # MarketMate backend
 
-Go 1.21 + Gin. Resolves a YouTube link to a recipe, extracts the ingredients,
+Go 1.26 + Gin. Resolves a YouTube link to a recipe, extracts the ingredients,
 and finds nearby shops that stock them.
 
 ```bash

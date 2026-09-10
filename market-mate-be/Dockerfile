@@ -1,5 +1,5 @@
 # Build a static, CGO-free binary and ship it on a distroless base.
-FROM golang:1.23-alpine AS build
+FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
